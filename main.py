@@ -20,40 +20,67 @@ app.add_middleware(
 )
 
 @app.post("/chat")
-async def chat(request: Request, background_tasks: BackgroundTasks):
-    # 1. We don't even check the API key for this test to be safe
-    # 2. We wrap everything in a giant "Safety Net"
-    try:
-        raw_data = await request.json()
-        print(f"GUVI_DATA: {raw_data}") # This will show you the truth in the logs
-        
-        # Pull out the message text safely
-        msg_text = "Hello" # Default
-        if "message" in raw_data:
-            if isinstance(raw_data["message"], dict):
-                msg_text = raw_data["message"].get("text", "Hello")
-            else:
-                msg_text = str(raw_data["message"])
+async def chat(payload: dict, background_tasks: BackgroundTasks, x_api_key: str = Header(None)):
+    # ... (Auth Check code here) ...
+    
+    latest_msg = payload["message"]["text"]
+    history = payload.get("conversationHistory", [])
+    session_id = payload.get("sessionId", "unknown")
+    
+    # 1. Run the Analyst first
+    intel = extract_intelligence(latest_msg, history)
+    
+    # 2. Logic to wake up Ramesh
+    has_mule_data = len(intel.upiIds) > 0 or len(intel.phishingLinks) > 0 or len(intel.bankAccounts) > 0
+    is_suspicious = intel.scamDetected or has_mule_data
 
-        # 3. Use the simplest possible AI call
-        ai_reply = get_agent_response(msg_text, raw_data.get("conversationHistory", []))
-
-        # 4. Return EXACTLY what Section 8 says. Nothing else.
+    if not is_suspicious and len(history) < 2:
         return {
-            "status": "success",
-            "reply": str(ai_reply)
+            "status": "success", 
+            "reply": "Hello, who is this please? I don't recognize the number.",
+            "debug_intel": intel.model_dump(),
+            "report_triggered": False # Changed name here for consistency
         }
 
-    except Exception as e:
-        # Even if the sky falls, return a 200 OK with this JSON
-        print(f"Error caught: {e}")
-        return {
-            "status": "success",
-            "reply": "I am a bit confused, could you repeat that?"
+    # 3. Define reporting logic BEFORE the return
+    intel_count = len(intel.upiIds) + len(intel.phishingLinks) + len(intel.bankAccounts) + len(intel.phoneNumbers)
+    turn_count = len(history)
+    
+    # This is the variable the error was complaining about:
+    should_report = intel.scamDetected and (intel_count >= 1) and ((turn_count >= 6) or (intel_count >= 2))
+
+    # 4. Activate Ramesh
+    ai_reply = get_agent_response(latest_msg, history)
+    
+    # 5. Queue background task if needed
+    if should_report:
+        background_tasks.add_task(evaluate_and_report, session_id, intel, history)
+
+
+
+
+
+    # 1. Convert intel to a dictionary
+    intel_dict = intel.model_dump()
+    
+    # 2. Extract the notes for the root level
+    root_notes = intel_dict.get("agentNotes", "No notes generated.")
+    
+    # 3. CRITICAL: Create a new dictionary WITHOUT agentNotes
+    clean_intel = {k: v for k, v in intel_dict.items() if k != "agentNotes"}
+    # 6. Return response to UI/Client
+    return {
+        "status": "success", 
+        "reply": ai_reply,
+        "report_triggered": should_report, # Name now matches the variable above
+        "final_payload_preview": {
+            "sessionId": session_id,
+            "scamDetected": True,
+            "totalMessagesExchanged": turn_count + 2,
+            "extractedIntelligence": clean_intel, # Clean version here
+            "agentNotes": root_notes
         }
-
-
-
+    }
 
 
 def evaluate_and_report(session_id, intel, history):
@@ -91,6 +118,7 @@ def evaluate_and_report(session_id, intel, history):
         send_to_guvi_with_retry(session_id, payload, turn_count + 1)
     else:
         print(f"⏳ STRATEGIC WAIT: Intel Count: {intel_count}, Turns: {turn_count}")
+
 
 
 
