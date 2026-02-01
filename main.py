@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent import get_agent_response, extract_intelligence 
 from utils import send_to_guvi_with_retry
 
-# 1. INITIALIZE APP FIRST (Fixes NameError)
+# 1. INITIALIZE APP FIRST
 app = FastAPI()
 reported_sessions = set()
 MY_SECRET_KEY = "tinku_local_test_key"
@@ -24,12 +24,10 @@ app.add_middleware(
 
 # 2. BACKGROUND ANALYST & REPORTING (Section 12)
 def full_extraction_logic(payload):
-    """
-    Handles intelligence extraction and the mandatory GUVI callback 
-    without slowing down the main chat response.
-    """
     try:
         session_id = payload.get("sessionId", "unknown")
+        
+        # If we already reported this specific session instance, skip
         if session_id in reported_sessions:
             return
 
@@ -37,13 +35,12 @@ def full_extraction_logic(payload):
         text = msg_obj.get("text", "") if isinstance(msg_obj, dict) else str(msg_obj)
         history = payload.get("conversationHistory", [])
 
-        # Extract intelligence using your agent logic
         intel = extract_intelligence(text, history)
         
         intel_count = len(intel.upiIds) + len(intel.phishingLinks) + len(intel.bankAccounts) + len(intel.phoneNumbers)
         turn_count = len(history)
 
-        # Reporting criteria: detected scam + has mule data + enough turns or high intel
+        # Reporting criteria
         should_report = intel.scamDetected and (intel_count >= 1) and (turn_count >= 6 or intel_count >= 2)
 
         if should_report:
@@ -59,11 +56,10 @@ def full_extraction_logic(payload):
                     "upiIds": list(intel.upiIds),
                     "phishingLinks": list(intel.phishingLinks),
                     "phoneNumbers": list(intel.phoneNumbers),
-                    "suspiciousKeywords": ["urgent", "verify now", "blocked", "OTP", "account compromised"]
+                    "suspiciousKeywords": ["urgent", "verify now", "blocked", "OTP", "SBI", "account number"]
                 },
                 "agentNotes": str(intel.agentNotes)
             }
-            # Mandatory callback to GUVI endpoint
             send_to_guvi_with_retry(session_id, callback_payload, turn_count + 2)
         else:
             print(f"⏳ STRATEGIC WAIT: Intel: {intel_count}, Turns: {turn_count}")
@@ -77,14 +73,23 @@ async def chat(request: Request, background_tasks: BackgroundTasks, x_api_key: s
     try:
         # Auth Check
         if x_api_key != MY_SECRET_KEY:
-            # We return success/reply even on bad keys during testing to avoid 403 blocks
             return {"status": "success", "reply": "Hello? I think I have the wrong number."}
 
-        # 4. DATA EXTRACTION (Handles Integer Timestamps & Missing Fields)
         payload = await request.json()
+        session_id = payload.get("sessionId", "unknown")
+        history = payload.get("conversationHistory", [])
+
+        # --- NEW: SESSION RESET LOGIC (Clears Cache for New Tests) ---
+        # If history is empty, it's the first message of a new test attempt.
+        # We remove the session_id from reported_sessions to allow re-reporting.
+        if not history and session_id in reported_sessions:
+            print(f"🔄 NEW TEST DETECTED: Clearing lock for session {session_id}")
+            reported_sessions.remove(session_id)
+        # -------------------------------------------------------------
+
+        # Data Extraction
         msg_obj = payload.get("message", {})
         text = msg_obj.get("text", "Hello") if isinstance(msg_obj, dict) else str(msg_obj)
-        history = payload.get("conversationHistory", [])
 
         # 5. GENERATE AI RESPONSE (Ramesh)
         ai_reply = get_agent_response(text, history)
@@ -92,15 +97,15 @@ async def chat(request: Request, background_tasks: BackgroundTasks, x_api_key: s
         # 6. QUEUE BACKGROUND REPORTING
         background_tasks.add_task(full_extraction_logic, payload)
 
-        # 7. FINAL RESPONSE (Section 8: ONLY status and reply)
+        # 7. FINAL RESPONSE (Section 8 ONLY)
         return {
             "status": "success",
             "reply": str(ai_reply)
         }
 
     except Exception as e:
-        print(f"DEBUG: Internal error caught: {e}")
+        print(f"DEBUG Error: {e}")
         return {
             "status": "success", 
-            "reply": "I'm sorry, my connection is very bad. Can you repeat?"
+            "reply": "Wait, what? My screen is glitching. Can you repeat?"
         }
