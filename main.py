@@ -86,15 +86,8 @@ async def chat(request: Request, background_tasks: BackgroundTasks, x_api_key: s
     clean_intel = {k: v for k, v in intel_dict.items() if k != "agentNotes"}
 
     return {
-        "reply": str(ai_reply),
-        "intelligence": {
-            "scamDetected": bool(intel.scamDetected),
-            "upiIds": list(intel.upiIds) if intel.upiIds else [],
-            "phishingLinks": list(intel.phishingLinks) if intel.phishingLinks else [],
-            "bankAccounts": list(intel.bankAccounts) if intel.bankAccounts else [],
-            "phoneNumbers": list(intel.phoneNumbers) if intel.phoneNumbers else []
-        },
-        "agentNotes": str(root_notes)
+        "status": "success",
+        "reply": str(ai_reply)
     }
 
 
@@ -137,6 +130,7 @@ def evaluate_and_report(session_id, intel, history):
         send_to_guvi_with_retry(session_id, payload, turn_count + 1)
     else:
         print(f"⏳ STRATEGIC WAIT: Intel Count: {intel_count}, Turns: {turn_count}")
+
 
 
 
