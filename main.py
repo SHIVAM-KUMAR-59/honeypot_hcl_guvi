@@ -71,7 +71,8 @@ def full_extraction_logic(payload):
 @app.post("/chat/")
 async def chat(request: Request, background_tasks: BackgroundTasks, x_api_key: str = Header(None)):
     try:
-        # Auth Check
+        if not history: # If the bot sends an empty history (New Test)
+            reported_sessions.discard(session_id)
         if x_api_key != MY_SECRET_KEY:
             return {"status": "success", "reply": "Hello? I think I have the wrong number."}
 
@@ -109,3 +110,4 @@ async def chat(request: Request, background_tasks: BackgroundTasks, x_api_key: s
             "status": "success", 
             "reply": "Wait, what? My screen is glitching. Can you repeat?"
         }
+
