@@ -8,12 +8,39 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # FIXED: Use exact lowercase strings and ensure commas are present!
 MODEL_PRIORITY = [
-    "gemini-1.5-flash",        # Highest quota, most stable for hackathons
-    "gemini-1.5-flash-8b",     # Fast, lite version of 1.5
-    "gemini-2.0-flash",        # Latest stable 2.0 model
-    "gemini-2.0-flash-lite",   # 2.0 Lite version
-    "gemini-1.5-pro"           # Smartest model, but lower rate limits
+    "gemini-3-flash",          # THE BEST CHOICE: Fast, high quota, and currently active.
+    "gemini-3-flash-preview",  # Your backup if the stable version is busy.
+    "gemini-2.5-flash",        # Still active and very stable.
+    "gemini-2.5-flash-lite",   # Use this if you hit 429 errors on the main Flash.
+    "gemini-3-pro-preview"     # Use only as a last resort (slow).
 ]
+
+import time
+
+def get_agent_response(prompt, history):
+    for model_name in MODEL_PRIORITY:
+        try:
+            # Use the new Gemini 3 models
+            response = client.models.generate_content(
+                model=model_name, 
+                contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            if "429" in str(e):
+                print(f"⚠️ {model_name} is busy (429). Trying next...")
+                time.sleep(1) # Small pause
+                continue
+            elif "404" in str(e):
+                print(f"❌ {model_name} is retired (404). Trying next...")
+                continue
+            else:
+                print(f"Error: {e}")
+                break
+    return "I am having trouble with my phone... can we talk later?"
+
+
+
 
 # Example of how to use this list to prevent crashes:
 def get_working_model():
@@ -143,6 +170,7 @@ def extract_intelligence(message: str, history: list) -> ExtractedIntelligence:
         agentNotes="AI Analysis failed; basic keyword detection used."
 
     )
+
 
 
 
