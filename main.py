@@ -28,8 +28,36 @@ app.add_middleware(
 @app.post("/chat")
 async def chat(payload: dict, background_tasks: BackgroundTasks, x_api_key: str = Header(None)):
     # ... (Auth Check code here) ...
+
+    print(f"DEBUG: Received payload: {payload}") # This will show up in your Railway logs
+
+
     
-    latest_msg = payload["message"]["text"]
+   msg_data = payload.get("message", "")
+
+   if isinstance(msg_data, dict):
+    # If it's a folder/dict, look for the 'text' key
+       latest_msg = msg_data.get("text", str(msg_data))
+   else:
+    # If it's already just text, use it directly
+       latest_msg = str(msg_data)
+
+# Safety check: if message is empty
+   if not latest_msg or latest_msg.strip() == "":
+       latest_msg = "Hello?"
+
+
+
+
+
+
+
+
+
+
+
+
+    
     history = payload.get("conversationHistory", [])
     session_id = payload.get("sessionId", "unknown")
     
@@ -117,3 +145,4 @@ def evaluate_and_report(session_id, intel, history):
     else:
 
         print(f"⏳ STRATEGIC WAIT: Intel Count: {intel_count}, Turns: {turn_count}")
+
