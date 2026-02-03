@@ -10,7 +10,9 @@ load_dotenv()
 
 # ------------------ GEMINI CLIENT ------------------
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ------------------ MODEL PRIORITY (FREE-TIER SAFE) ------------------
 
@@ -18,7 +20,7 @@ MODEL_PRIORITY = [
     "gemini-3-flash",
     "gemini-3-flash-preview",
     "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",   # safest fallback
+    "gemini-2.5-flash-lite",  # safest fallback
 ]
 
 # ------------------ HONEYPOT PROMPT ------------------
@@ -34,7 +36,7 @@ You never sound like a bot.
 
 Your goals:
 - Keep scammer talking as long as possible
-- Act confused, emotional, manipulative, and curious 
+- Act confused, emotional, manipulative, and curious
 - Max 2–3 lines per reply unless needed
 - Delay sending money
 - Emotion level = LOW–MEDIUM
@@ -55,12 +57,17 @@ Reply like a real human trying to verify:
 # ------------------ AGENT RESPONSE ------------------
 
 
-def get_agent_response(message: str, history: List[Dict]) -> str:
+def get_agent_response(
+    session_id: str,
+    message: str,
+    history: List[Dict]
+) -> str:
     """
     Generates a believable human reply to engage scammer.
+    session_id included for API contract compatibility.
     """
 
-    # Build readable history for prompt injection
+    # Build readable history
     formatted_history = ""
     for h in history:
         sender = h.get("sender", "unknown").upper()
@@ -78,20 +85,21 @@ def get_agent_response(message: str, history: List[Dict]) -> str:
                 model=model_name,
                 contents=prompt
             )
-            return response.text.strip()
+
+            if response and response.text:
+                return response.text.strip()
 
         except Exception as e:
-            # Handle rate limits / retired models gracefully
-            if "429" in str(e):
+            err = str(e)
+            if "429" in err:
                 time.sleep(1)
                 continue
-            elif "404" in str(e):
+            if "404" in err:
                 continue
-            else:
-                break
+            break
 
     # Absolute safe fallback (judge-safe)
-    return "I’m a bit confused… can you please explain once more?"
+    return "I’m a little confused… can you explain once more?"
 
 # ------------------ INTELLIGENCE EXTRACTION ------------------
 
