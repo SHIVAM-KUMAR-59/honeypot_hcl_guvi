@@ -1,18 +1,19 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+import time
 
 from agent import get_agent_response
 
 app = FastAPI()
 
+# ---- Models aligned with support doc ---- #
 
-# -------- Models -------- #
 
 class Message(BaseModel):
     sender: Literal["scammer", "user"]
     text: str
-    timestamp: int
+    timestamp: int  # epoch ms
 
 
 class Metadata(BaseModel):
@@ -22,32 +23,28 @@ class Metadata(BaseModel):
 
 
 class IncomingRequest(BaseModel):
-    sessionId: str
     message: Message
-    conversationHistory: Optional[List[Message]] = None
+    conversationHistory: Optional[List[Message]] = []
     metadata: Optional[Metadata] = None
 
     class Config:
-        extra = "allow"
+        extra = "allow"  # VERY IMPORTANT for hackathon testers
 
 
-# -------- Endpoint -------- #
+# ---- Endpoint ---- #
 
 @app.post("/honeypot")
 async def honeypot(request: IncomingRequest):
-
-    # Safe fallback
-    history = request.conversationHistory or []
-
-    # Pydantic v2 SAFE conversion
-    history_dict = [msg.model_dump() for msg in history]
+    # Safe session id (derived, not required)
+    session_id = f"auto-{request.message.timestamp}"
 
     reply = get_agent_response(
+        session_id=session_id,
         message=request.message.text,
-        history=history_dict
+        history=request.conversationHistory
     )
 
     return {
-        "status": "success",
-        "reply": str(reply)
+        "reply": reply,
+        "timestamp": int(time.time() * 1000)
     }
