@@ -7,12 +7,12 @@ from agent import get_agent_response
 app = FastAPI()
 
 
-# -------- Request Models (STRICTLY MATCH SPEC) -------- #
+# -------- Models -------- #
 
 class Message(BaseModel):
     sender: Literal["scammer", "user"]
     text: str
-    timestamp: int  # Epoch ms
+    timestamp: int
 
 
 class Metadata(BaseModel):
@@ -28,25 +28,26 @@ class IncomingRequest(BaseModel):
     metadata: Optional[Metadata] = None
 
     class Config:
-        extra = "allow"   # prevents tester crashes
+        extra = "allow"
 
 
-# -------- Honeypot Endpoint -------- #
+# -------- Endpoint -------- #
 
 @app.post("/honeypot")
 async def honeypot(request: IncomingRequest):
 
-    # Safe history fallback
+    # Safe fallback
     history = request.conversationHistory or []
 
-    # Generate reply (agent only needs text + history)
+    # Pydantic v2 SAFE conversion
+    history_dict = [msg.model_dump() for msg in history]
+
     reply = get_agent_response(
         message=request.message.text,
-        history=[h.dict() for h in history]
+        history=history_dict
     )
 
-    # ⚠️ RESPONSE MUST MATCH SECTION 8 EXACTLY
     return {
         "status": "success",
-        "reply": reply
+        "reply": str(reply)
     }
